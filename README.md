@@ -2,6 +2,16 @@
 
 ## 🚀 快速开始
 
+### 完整快速流程
+安装python环境
+下载这个仓库
+pip配置环境
+运行tui
+按5登陆
+按1获取cookie
+按2开始自动化观看
+等着结束
+
 ### 1. 环境准备
 ```bash
 # 安装依赖
@@ -23,7 +33,6 @@ pip install aiohttp beautifulsoup4 requests
 #### 方法一：使用现有Cookie（推荐）
 直接运行脚本，脚本会自动：
 - 检测现有Cookie（`config.json`或`fixed_config.json`）
-- 修复Cookie格式问题
 - 开始视频学习
 
 ```bash
