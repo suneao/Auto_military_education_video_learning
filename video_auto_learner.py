@@ -179,8 +179,13 @@ class VideoAutoLearner:
             logger.error(f"加载配置文件失败: {e}")
             return None
     
-    def parse_course_list_html(self, html_content: str) -> List[VideoCourse]:
-        """解析课程列表HTML"""
+    def parse_course_list_html(self, html_content: str, include_completed: bool = False) -> List[VideoCourse]:
+        """解析课程列表HTML
+        
+        Args:
+            html_content: HTML内容
+            include_completed: 是否包含已完成的课程
+        """
         soup = BeautifulSoup(html_content, 'html.parser')
         courses = []
         
@@ -245,8 +250,8 @@ class VideoAutoLearner:
                 else:
                     status = "未知"
                 
-                # 处理状态为"学习中"或"未学习"的课程
-                if status in ["学习中", "未学习"]:
+                # 处理课程：如果include_completed为True则包含所有课程，否则只包含学习中/未学习
+                if include_completed or status in ["学习中", "未学习"]:
                     course = VideoCourse(
                         course_id=course_id,
                         course_name=course_name,
@@ -261,11 +266,19 @@ class VideoAutoLearner:
                 logger.warning(f"解析课程行时出错: {e}")
                 continue
         
-        logger.info(f"共发现 {len(courses)} 个可学习课程 (状态: 学习中或未学习)")
+        if include_completed:
+            logger.info(f"共发现 {len(courses)} 个课程 (包含所有状态)")
+        else:
+            logger.info(f"共发现 {len(courses)} 个可学习课程 (状态: 学习中或未学习)")
         return courses
     
-    async def fetch_course_list_from_api(self, session: aiohttp.ClientSession) -> List[VideoCourse]:
-        """从API获取课程列表（支持分页）"""
+    async def fetch_course_list_from_api(self, session: aiohttp.ClientSession, include_completed: bool = False) -> List[VideoCourse]:
+        """从API获取课程列表（支持分页）
+        
+        Args:
+            session: aiohttp会话
+            include_completed: 是否包含已完成的课程
+        """
         url = f"{self.base_url}/Study/LibraryStudyList.aspx"
         
         # 添加必要的头部
@@ -281,7 +294,10 @@ class VideoAutoLearner:
         eventvalidation = ""
         
         try:
-            logger.info("正在从API获取课程列表...")
+            if include_completed:
+                logger.info("正在从API获取所有课程列表（包含已完成）...")
+            else:
+                logger.info("正在从API获取课程列表...")
             
             # 首先获取第一页以提取隐藏字段
             logger.info("获取第一页课程列表...")
@@ -296,8 +312,8 @@ class VideoAutoLearner:
                 # 提取隐藏字段
                 viewstate, viewstategenerator, eventvalidation = self._extract_hidden_fields(html_content)
                 
-                # 解析第一页的课程（包含学习中状态）
-                page_courses = self.parse_course_list_html(html_content)
+                # 解析第一页的课程
+                page_courses = self.parse_course_list_html(html_content, include_completed)
                 logger.info(f"第一页找到 {len(page_courses)} 个课程")
                 
                 # 添加到总列表
@@ -337,7 +353,7 @@ class VideoAutoLearner:
                     logger.info(f"第 {page} 页响应大小: {len(html_content)} 字符")
                     
                     # 解析课程的课程
-                    page_courses = self.parse_course_list_html(html_content)
+                    page_courses = self.parse_course_list_html(html_content, include_completed)
                     logger.info(f"第 {page} 页找到 {len(page_courses)} 个课程")
                     
                     # 检查页面内容
@@ -351,7 +367,10 @@ class VideoAutoLearner:
                     # 短暂延迟
                     await asyncio.sleep(0.5)
             
-            logger.info(f"从所有页面共获取到 {len(all_courses)} 个课程")
+            if include_completed:
+                logger.info(f"从所有页面共获取到 {len(all_courses)} 个课程 (包含所有状态)")
+            else:
+                logger.info(f"从所有页面共获取到 {len(all_courses)} 个课程")
             return all_courses
                 
         except Exception as e:

@@ -373,14 +373,131 @@ class VideoLearnerTUI:
         """查看学习进度"""
         self.print_header("查看学习进度")
         
-        print("⚠️  出于安全考虑，日志不保存到文件")
-        print("实时进度将在运行过程中显示在控制台")
-        print("\n要查看学习进度，请:")
-        print("1. 运行视频学习")
-        print("2. 在控制台中查看实时输出")
-        print("3. 按 Ctrl+C 停止后，进度信息将消失")
+        # 检查Cookie
+        if not self.learner.session_cookies:
+            print("❌ 未配置Cookie，无法获取学习进度")
+            print("\n请先配置Cookie：")
+            print("1. 在主菜单中选择 '配置Cookie'")
+            print("2. 选择 '重新登录获取新Cookie' 或 '从现有配置文件加载'")
+            input("\n按回车键继续...")
+            return
         
-        input("\n按回车键继续...")
+        print("正在从考试平台获取学习进度...")
+        print("这可能需要几秒钟时间，请稍候...")
+        print()
+        
+        # 定义异步函数来获取进度
+        async def fetch_progress():
+            import aiohttp
+            connector = aiohttp.TCPConnector(limit=10)
+            timeout = aiohttp.ClientTimeout(total=30)
+            
+            # 复制头部并手动添加Cookie头
+            session_headers = self.learner.session_headers.copy()
+            if self.learner.cookie_header:
+                session_headers["Cookie"] = self.learner.cookie_header
+            
+            async with aiohttp.ClientSession(
+                headers=session_headers,
+                connector=connector,
+                timeout=timeout
+            ) as session:
+                # 获取所有课程（包括已完成）
+                courses = await self.learner.fetch_course_list_from_api(session, include_completed=True)
+                return courses
+        
+        try:
+            # 运行异步函数
+            import asyncio
+            courses = asyncio.run(fetch_progress())
+            
+            if not courses:
+                print("❌ 未获取到任何课程信息")
+                print("可能的原因:")
+                print("  1. Cookie已过期，请重新登录")
+                print("  2. 网络连接问题")
+                print("  3. 考试平台页面结构已变化")
+                input("\n按回车键继续...")
+                return
+            
+            # 计算总体统计
+            total_courses = len(courses)
+            completed_courses = sum(1 for c in courses if c.status == "已完成")
+            learning_courses = sum(1 for c in courses if c.status == "学习中")
+            not_started_courses = sum(1 for c in courses if c.status == "未学习")
+            unknown_courses = sum(1 for c in courses if c.status == "未知")
+            
+            total_minutes = sum(c.total_minutes for c in courses)
+            completed_minutes = sum(c.completed_minutes for c in courses)
+            
+            # 显示统计信息
+            print("=" * 80)
+            print("📊 学习进度总览")
+            print("=" * 80)
+            print(f"课程总数: {total_courses}")
+            print(f"  已完成: {completed_courses} ({completed_courses/total_courses*100:.1f}%)")
+            print(f"  学习中: {learning_courses} ({learning_courses/total_courses*100:.1f}%)")
+            print(f"  未开始: {not_started_courses} ({not_started_courses/total_courses*100:.1f}%)")
+            if unknown_courses > 0:
+                print(f"  未知状态: {unknown_courses}")
+            
+            if total_minutes > 0:
+                progress_percent = (completed_minutes / total_minutes) * 100
+                print(f"\n总学时: {total_minutes} 分钟")
+                print(f"已完成: {completed_minutes} 分钟 ({progress_percent:.1f}%)")
+                print(f"剩余: {total_minutes - completed_minutes} 分钟")
+            else:
+                print("\n总学时: 0 分钟")
+            
+            print("\n" + "=" * 80)
+            print("📋 课程详情")
+            print("=" * 80)
+            
+            # 按状态排序：学习中 > 未学习 > 已完成 > 未知
+            status_order = {"学习中": 0, "未学习": 1, "已完成": 2, "未知": 3}
+            sorted_courses = sorted(courses, key=lambda c: (status_order.get(c.status, 4), c.course_name))
+            
+            # 显示课程列表
+            for i, course in enumerate(sorted_courses, 1):
+                status_icon = {
+                    "已完成": "✅",
+                    "学习中": "⏳",
+                    "未学习": "⏸️",
+                    "未知": "❓"
+                }.get(course.status, "❓")
+                
+                if course.total_minutes > 0:
+                    course_percent = (course.completed_minutes / course.total_minutes) * 100
+                else:
+                    course_percent = 0
+                
+                # 使用固定宽度显示进度条
+                bar_length = 30
+                filled_length = int(bar_length * course.completed_minutes // course.total_minutes) if course.total_minutes > 0 else 0
+                bar = "█" * filled_length + "░" * (bar_length - filled_length)
+                
+                print(f"{i:3d}. {status_icon} {course.course_name}")
+                print(f"     进度: {course.completed_minutes:3d}/{course.total_minutes:3d} 分钟 "
+                      f"({course_percent:5.1f}%) [{bar}]")
+                print(f"     状态: {course.status}")
+                print()
+            
+            # 如果课程太多，显示摘要
+            if len(courses) > 20:
+                print(f"\n（已显示 {len(courses)} 门课程，可使用滚动查看全部）")
+            
+            print("=" * 80)
+            print("💡 提示: 按 Ctrl+C 可以随时停止脚本")
+            
+        except KeyboardInterrupt:
+            print("\n⏹️  用户中断")
+        except Exception as e:
+            print(f"\n❌ 获取学习进度时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            print("\n请检查网络连接和Cookie有效性")
+        
+        input("\n按回车键返回主菜单...")
     
     def test_connection(self):
         """测试连接"""
@@ -457,7 +574,7 @@ class VideoLearnerTUI:
                         try:
                             # 创建异步任务来测试解析
                             async def test_parse():
-                                return self.learner.parse_course_list_html(content)
+                                return self.learner.parse_course_list_html(content, include_completed=False)
                             
                             courses = asyncio.run(test_parse())
                             print(f"✅ API解析到 {len(courses)} 个未完成课程")
