@@ -97,7 +97,7 @@ class VideoAutoLearner:
             "cookies": cookies_dict,
             "base_url": self.base_url,
             "update_interval_seconds": 60,  # 改为每分钟提交一次
-            "max_concurrent_videos": 5,
+            "max_concurrent_videos": 30,
             "retry_attempts": 3
         })
         
@@ -236,6 +236,8 @@ class VideoAutoLearner:
                     status_text = str(status_span.get_text(strip=True))
                     if "学习中" in status_text:
                         status = "学习中"
+                    elif "未学习" in status_text:
+                        status = "未学习"
                     elif "已完成" in status_text:
                         status = "已完成"
                     else:
@@ -243,8 +245,8 @@ class VideoAutoLearner:
                 else:
                     status = "未知"
                 
-                # 只处理状态为"学习中"的课程
-                if status == "学习中":
+                # 处理状态为"学习中"或"未学习"的课程
+                if status in ["学习中", "未学习"]:
                     course = VideoCourse(
                         course_id=course_id,
                         course_name=course_name,
@@ -253,13 +255,13 @@ class VideoAutoLearner:
                         status=status
                     )
                     courses.append(course)
-                    logger.info(f"发现未完成课程: {course}")
+                    logger.info(f"发现课程[{status}]: {course}")
                 
             except Exception as e:
                 logger.warning(f"解析课程行时出错: {e}")
                 continue
         
-        logger.info(f"共发现 {len(courses)} 个未完成课程")
+        logger.info(f"共发现 {len(courses)} 个可学习课程 (状态: 学习中或未学习)")
         return courses
     
     async def fetch_course_list_from_api(self, session: aiohttp.ClientSession) -> List[VideoCourse]:
@@ -269,65 +271,144 @@ class VideoAutoLearner:
         # 添加必要的头部
         headers = self.session_headers.copy()
         headers["Referer"] = f"{self.base_url}/Homes/MainPage.aspx"
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
         
         all_courses = []
         page = 1
         total_pages = 1
+        viewstate = ""
+        viewstategenerator = ""
+        eventvalidation = ""
         
         try:
             logger.info("正在从API获取课程列表...")
             
-            while page <= total_pages:
-                # 添加分页参数 - 必须包含ddlClass=32
-                params = {"ddlClass": "32", "page": str(page)} if page > 1 else {"ddlClass": "32"}
+            # 首先获取第一页以提取隐藏字段
+            logger.info("获取第一页课程列表...")
+            async with session.get(url, params={"ddlClass": "32"}, headers=headers) as response:
+                if response.status != 200:
+                    logger.error(f"获取第一页课程列表失败，状态码: {response.status}")
+                    return []
                 
-                logger.info(f"获取第 {page} 页课程列表 (ddlClass=32)...")
-                async with session.get(url, params=params, headers=headers) as response:
+                html_content = await response.text()
+                logger.info(f"第一页响应大小: {len(html_content)} 字符")
+                
+                # 提取隐藏字段
+                viewstate, viewstategenerator, eventvalidation = self._extract_hidden_fields(html_content)
+                
+                # 解析第一页的课程（包含学习中状态）
+                page_courses = self.parse_course_list_html(html_content)
+                logger.info(f"第一页找到 {len(page_courses)} 个课程")
+                
+                # 添加到总列表
+                for course in page_courses:
+                    if not any(c.course_id == course.course_id for c in all_courses):
+                        all_courses.append(course)
+                
+                # 解析总页数
+                total_pages = self._parse_total_pages(html_content)
+                logger.info(f"总页数: {total_pages}")
+                
+                # 检查页面内容
+                self._check_page_content(html_content)
+            
+            # 如果有更多页面，获取后续页面
+            for page in range(2, total_pages + 1):
+                if not viewstate:
+                    logger.warning(f"缺少隐藏字段，无法获取第 {page} 页")
+                    break
+                
+                # 构建表单数据 - 使用正确的分页参数 PageSplit1$ddlPage
+                form_data = {
+                    '__VIEWSTATE': viewstate,
+                    '__VIEWSTATEGENERATOR': viewstategenerator,
+                    '__EVENTVALIDATION': eventvalidation,
+                    'ddlClass': '32',
+                    'PageSplit1$ddlPage': str(page)
+                }
+                
+                logger.info(f"获取第 {page} 页课程列表...")
+                async with session.post(url, data=form_data, headers=headers) as response:
                     if response.status != 200:
                         logger.error(f"获取第 {page} 页课程列表失败，状态码: {response.status}")
                         break
                     
                     html_content = await response.text()
-                    logger.info(f"第 {page} 页课程列表，页面大小: {len(html_content)} 字符")
+                    logger.info(f"第 {page} 页响应大小: {len(html_content)} 字符")
+                    
+                    # 解析课程的课程
+                    page_courses = self.parse_course_list_html(html_content)
+                    logger.info(f"第 {page} 页找到 {len(page_courses)} 个课程")
                     
                     # 检查页面内容
-                    if "学习中" in html_content:
-                        learning_count = html_content.count("学习中")
-                        logger.info(f"第 {page} 页包含 '学习中' 状态 {learning_count} 次")
-                    else:
-                        logger.warning(f"第 {page} 页不包含 '学习中' 状态文本")
+                    self._check_page_content(html_content)
                     
-                    # 如果是第一页，解析总页数
-                    if page == 1:
-                        total_pages = self._parse_total_pages(html_content)
-                        logger.info(f"总页数: {total_pages}")
-                    
-                    # 使用现有的解析函数
-                    page_courses = self.parse_course_list_html(html_content)
-                    logger.info(f"第 {page} 页找到 {len(page_courses)} 个未完成课程")
-                    
-                    # 如果解析不到课程但页面有内容，可能是解析问题
-                    if len(page_courses) == 0 and "table" in html_content and "开始学习" in html_content:
-                        logger.warning(f"第 {page} 页有表格但未解析到课程，可能需要检查解析逻辑")
-                    
-                    # 添加到总列表
+                    # 添加到总列表（去重）
                     for course in page_courses:
-                        # 去重：检查是否已存在相同ID的课程
                         if not any(c.course_id == course.course_id for c in all_courses):
                             all_courses.append(course)
                     
-                    page += 1
-                    
-                    # 短暂延迟，避免请求过快
-                    if page <= total_pages:
-                        await asyncio.sleep(0.5)
+                    # 短暂延迟
+                    await asyncio.sleep(0.5)
             
-            logger.info(f"从所有页面共获取到 {len(all_courses)} 个未完成课程")
+            logger.info(f"从所有页面共获取到 {len(all_courses)} 个课程")
             return all_courses
                 
         except Exception as e:
             logger.error(f"从API获取课程列表时出错: {e}")
             return all_courses
+    
+    def _extract_hidden_fields(self, html_content: str) -> Tuple[str, str, str]:
+        """从HTML内容提取隐藏字段"""
+        import re
+        viewstate = ""
+        viewstategenerator = ""
+        eventvalidation = ""
+        
+        try:
+            # 提取VIEWSTATE
+            viewstate_match = re.search(r'id=\"__VIEWSTATE\" value=\"([^\"]+)\"', html_content)
+            if viewstate_match:
+                viewstate = viewstate_match.group(1)
+            
+            # 提取VIEWSTATEGENERATOR
+            viewstategenerator_match = re.search(r'id=\"__VIEWSTATEGENERATOR\" value=\"([^\"]+)\"', html_content)
+            if viewstategenerator_match:
+                viewstategenerator = viewstategenerator_match.group(1)
+            
+            # 提取EVENTVALIDATION
+            eventvalidation_match = re.search(r'id=\"__EVENTVALIDATION\" value=\"([^\"]+)\"', html_content)
+            if eventvalidation_match:
+                eventvalidation = eventvalidation_match.group(1)
+            
+            logger.debug(f"提取隐藏字段: VIEWSTATE长度={len(viewstate)}, VIEWSTATEGENERATOR={viewstategenerator}, EVENTVALIDATION长度={len(eventvalidation)}")
+        except Exception as e:
+            logger.error(f"提取隐藏字段时出错: {e}")
+        
+        return viewstate, viewstategenerator, eventvalidation
+    
+    def _check_page_content(self, html_content: str):
+        """检查页面内容，记录不同状态的课程数量"""
+        try:
+            learning_count = html_content.count("学习中")
+            not_learning_count = html_content.count("未学习")
+            completed_count = html_content.count("已完成")
+            start_learning_count = html_content.count("开始学习")
+            
+            if learning_count > 0:
+                logger.info(f"页面包含 '学习中' 状态 {learning_count} 次")
+            if not_learning_count > 0:
+                logger.info(f"页面包含 '未学习' 状态 {not_learning_count} 次")
+            if completed_count > 0:
+                logger.info(f"页面包含 '已完成' 状态 {completed_count} 次")
+            if start_learning_count > 0:
+                logger.info(f"页面包含 '开始学习' 按钮 {start_learning_count} 次")
+                
+            # 检查是否有表格
+            if "table" in html_content:
+                logger.debug("页面包含表格")
+        except Exception as e:
+            logger.debug(f"检查页面内容时出错: {e}")
     
     def _parse_total_pages(self, html_content: str) -> int:
         """从HTML内容解析总页数"""
@@ -552,7 +633,7 @@ class VideoAutoLearner:
             logger.info("从API获取课程列表...")
             
             # 创建会话用于获取课程列表
-            connector = aiohttp.TCPConnector(limit=10)
+            connector = aiohttp.TCPConnector(limit=40)
             timeout = aiohttp.ClientTimeout(total=30)
             session_headers = self.session_headers.copy()
             if self.cookie_header:
@@ -593,7 +674,7 @@ class VideoAutoLearner:
             return
         
         # 2. 创建会话
-        connector = aiohttp.TCPConnector(limit=10)  # 限制并发连接数
+        connector = aiohttp.TCPConnector(limit=40)  # 限制并发连接数，支持最多30个并发课程
         timeout = aiohttp.ClientTimeout(total=30)
         
         # 复制头部并手动添加Cookie头
@@ -627,7 +708,14 @@ class VideoAutoLearner:
             
             # 4. 启动所有视频更新任务（交错启动）
             worker_tasks = []
-            for idx, (course_id, (course, params)) in enumerate(course_params_map.items()):
+            
+            # 限制最多30个并发课程
+            course_items = list(course_params_map.items())
+            if len(course_items) > 30:
+                logger.warning(f"发现 {len(course_items)} 个课程，超过30个并发限制，只处理前30个课程")
+                course_items = course_items[:30]
+            
+            for idx, (course_id, (course, params)) in enumerate(course_items):
                 start_delay = idx * 1.0  # 每个任务延迟1秒启动，实现交错
                 task = asyncio.create_task(
                     self.video_update_worker(session, course, params, start_delay)
