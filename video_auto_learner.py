@@ -581,12 +581,19 @@ class VideoAutoLearner:
             # 每分钟提交60秒（或剩余不足60秒时提交剩余时间）
             submit_seconds = min(remaining_seconds, 60)
             
+            # 第一次请求更新时间会被判为无效，所以第一次提交1秒（避免0秒可能被拒绝）
+            if submission_count == 1:
+                submit_seconds = 1
+                logger.info(f"视频 [{course.course_name}] 第 {submission_count} 次提交（首次提交1秒，避免无效更新）")
+            
             # 提交进度
             success = await self.submit_progress(session, video_params, submit_seconds)
             
             if success:
-                total_submitted += submit_seconds
-                remaining_seconds -= submit_seconds
+                # 只有非首次提交才计入总时长（第一次提交无效）
+                if submission_count > 1:
+                    total_submitted += submit_seconds
+                    remaining_seconds -= submit_seconds
                 
                 logger.info(f"视频 [{course.course_name}] 第 {submission_count} 次提交成功: {submit_seconds}秒")
                 logger.info(f"  累计提交: {total_submitted}秒 ({total_submitted/60:.1f}分钟), 剩余: {remaining_seconds}秒 ({remaining_seconds/60:.1f}分钟)")
