@@ -10,7 +10,7 @@ pip install -r video_auto_learner/requirements.txt
 pip install aiohttp beautifulsoup4 requests
 ```
 
-### 2. 获取课程数据
+### 2. 获取课程数据（非必需步骤）
 1. **登录考试平台**：访问 http://www.gaoxiaokaoshi.com
 2. **进入课程页面**：登录后进入"我的课程"页面
 3. **保存课程列表**：
