@@ -606,12 +606,14 @@ class VideoAutoLearner:
         logger.info(f"视频 [{course.course_name}] 完成！总共提交 {submission_count} 次，累计 {total_submitted}秒 ({total_submitted/60:.1f}分钟)")
         return total_submitted
     
-    async def run(self, course_list_html_path: Optional[str] = None, use_api: bool = True):
+    async def run(self, course_list_html_path: Optional[str] = None, use_api: bool = True, 
+                 allow_file_fallback: bool = True):
         """主运行函数
         
         Args:
-            course_list_html_path: 课程列表HTML文件路径（如果use_api=False）
+            course_list_html_path: 课程列表HTML文件路径（如果use_api=False或API失败时回退）
             use_api: 是否从API获取课程列表，如果为False则从文件读取
+            allow_file_fallback: 当use_api=True且API返回空列表时，是否允许回退到文件读取
         """
         logger.info("开始视频学习自动化脚本")
         
@@ -646,8 +648,8 @@ class VideoAutoLearner:
             ) as session:
                 courses = await self.fetch_course_list_from_api(session)
             
-            # 如果API返回空列表，但有文件路径，则尝试从文件读取
-            if not courses and course_list_html_path:
+            # 如果API返回空列表，但有文件路径且允许回退，则尝试从文件读取
+            if not courses and course_list_html_path and allow_file_fallback:
                 logger.info("API未返回课程，尝试从文件读取课程列表...")
                 try:
                     with open(course_list_html_path, 'r', encoding='utf-8') as f:
@@ -656,6 +658,9 @@ class VideoAutoLearner:
                     logger.info(f"从文件读取到 {len(courses)} 个课程")
                 except Exception as e:
                     logger.error(f"读取课程列表文件失败: {e}")
+            elif not courses and not allow_file_fallback:
+                logger.error("API未返回课程，且不允许文件回退")
+                return
         elif course_list_html_path:
             logger.info(f"从文件读取课程列表: {course_list_html_path}")
             try:
@@ -666,7 +671,7 @@ class VideoAutoLearner:
                 logger.error(f"读取课程列表文件失败: {e}")
                 return
         else:
-            logger.error("请提供课程列表HTML文件路径或设置use_api=True")
+            logger.error("当use_api=False时，必须提供课程列表HTML文件路径")
             return
         
         if not courses:
@@ -885,7 +890,7 @@ async def main():
         print("-" * 60)
         
         try:
-            await learner.run(course_list_path)
+            await learner.run(course_list_path, use_api=True, allow_file_fallback=True)
             print("\n视频学习完成！")
             return
         except KeyboardInterrupt:

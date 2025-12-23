@@ -285,12 +285,35 @@ class VideoLearnerTUI:
         """开始视频学习"""
         self.print_header("开始视频学习")
         
-        # 检查课程列表文件
-        if not os.path.exists(self.course_list_path):
-            print(f"❌ 课程列表文件不存在: {self.course_list_path}")
-            print("请先保存课程列表页面")
+        # 选择学习模式
+        print("请选择学习模式:")
+        print("  1) 🚀 纯API模式 (直接从API读取课程，不依赖本地文件)")
+        print("  2) 🔄 API优先模式 (优先使用API，失败则回退到本地文件)")
+        print()
+        
+        mode_choice = input("请选择模式 (1-2): ").strip()
+        if mode_choice == "1":
+            learning_mode = "pure_api"
+            allow_file_fallback = False
+            print("\n✅ 选择模式: 纯API模式")
+            print("   将直接从API读取课程列表，不依赖本地文件")
+        elif mode_choice == "2":
+            learning_mode = "api_first"
+            allow_file_fallback = True
+            print("\n✅ 选择模式: API优先模式")
+            print("   优先使用API获取课程，失败时回退到本地文件")
+        else:
+            print("\n❌ 无效选择，返回主菜单")
             input("\n按回车键继续...")
             return
+        
+        # 对于API优先模式，检查课程列表文件
+        if learning_mode == "api_first":
+            if not os.path.exists(self.course_list_path):
+                print(f"❌ 课程列表文件不存在: {self.course_list_path}")
+                print("请先保存课程列表页面")
+                input("\n按回车键继续...")
+                return
         
         # 检查Cookie
         if not self.learner.session_cookies:
@@ -298,14 +321,18 @@ class VideoLearnerTUI:
             input("\n按回车键继续...")
             return
         
-        print("✅ 准备开始视频学习")
-        print(f"课程列表: {self.course_list_path}")
+        print("\n✅ 准备开始视频学习")
+        if learning_mode == "api_first":
+            print(f"课程列表文件: {self.course_list_path}")
         print(f"Cookie已配置: {len(self.learner.session_cookies)} 个")
         print()
         print("脚本将:")
-        print("  1. 优先从API获取课程列表（如失败则从文件读取）")
+        if learning_mode == "pure_api":
+            print("  1. 直接从API获取课程列表 (不依赖文件)")
+        else:
+            print("  1. 优先从API获取课程列表（如失败则从文件读取）")
         print("  2. 从API获取每个视频的参数")
-        print("  3. 并行提交学习进度")
+        print("  3. 并行提交学习进度 (最多30个并发课程)")
         print("  4. 每分钟提交60秒学习时间")
         print()
         print("📝 详细日志将输出到控制台")
@@ -320,12 +347,19 @@ class VideoLearnerTUI:
             return
         
         print("\n🚀 开始视频学习...")
-        print("模式: 优先使用API，失败则使用本地文件")
+        if learning_mode == "pure_api":
+            print("模式: 纯API模式 (直接使用API)")
+            # 纯API模式不需要文件路径，传递None
+            course_list_path = None
+        else:
+            print("模式: API优先模式 (允许文件回退)")
+            course_list_path = self.course_list_path
         print("日志输出: 控制台")
         print("-" * 40)
         
         try:
-            asyncio.run(self.learner.run(self.course_list_path, use_api=True))
+            asyncio.run(self.learner.run(course_list_path, use_api=True, 
+                                        allow_file_fallback=allow_file_fallback))
             print("\n✅ 视频学习完成！")
         except KeyboardInterrupt:
             print("\n⏹️  脚本已被用户中断")
