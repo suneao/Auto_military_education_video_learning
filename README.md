@@ -32,7 +32,7 @@ pip install aiohttp beautifulsoup4 requests
 
 #### 方法一：使用现有Cookie（推荐）
 直接运行脚本，脚本会自动：
-- 检测现有Cookie（`config.json`或`fixed_config.json`）
+- 检测现有Cookie（`fixed_config.json`）
 - 开始视频学习
 
 ```bash
@@ -41,7 +41,7 @@ python fixed_video_learner.py
 
 #### 方法二：重新登录获取新Cookie
 如果现有Cookie过期，请使用TUI重新登录：
-1. 运行 `python video_learner_tui.py`
+1. 运行 `python fixed_video_learner_tui.py`
 2. 选择 `配置Cookie` → `重新登录获取新Cookie`
 3. 输入您的账号密码
 4. 脚本会自动获取新Cookie并保存到`fixed_config.json`
@@ -74,7 +74,7 @@ python fixed_video_learner.py
 ### 4. 文本用户界面 (TUI) - 推荐新手使用
 ```bash
 # 启动交互式文本用户界面
-python video_learner_tui.py
+python fixed_video_learner_tui.py
 ```
 
 TUI提供完整的交互式菜单：
@@ -126,7 +126,7 @@ tail -f fixed_video_learner.log
 
 ### 调试工具
 使用TUI内置的测试功能：
-1. 运行 `python video_learner_tui.py`
+1. 运行 `python fixed_video_learner_tui.py`
 2. 选择 `4) 🔗 测试连接` - 测试网络和Cookie
 3. 选择 `6) 📁 检查文件` - 检查必需文件
 
@@ -139,9 +139,9 @@ less video_auto_learner.log
 ## 📁 文件说明
 
 ### 核心文件
-- `video_learner_tui.py` - **文本用户界面 (TUI)**（推荐新手使用）
-- `video_auto_learner.py` - **主脚本**（高级用户）
-- `config.json` - 配置文件（自动生成）
+- `fixed_video_learner_tui.py` - **文本用户界面 (TUI)**（推荐新手使用）
+- `fixed_video_auto_learner.py` - **主脚本**（高级用户）
+- `fixed_config.json` - 配置文件（自动生成）
 - `video_auto_learner.log` - 运行日志
 
 ### 数据文件
@@ -150,7 +150,7 @@ less video_auto_learner.log
 
 ### 文档工具
 - `API_DOCUMENTATION.md` - API接口文档（技术参考）
-- TUI内置帮助 - 运行 `python video_learner_tui.py` 选择 `7) ❓ 帮助`
+- TUI内置帮助 - 运行 `python fixed_video_learner_tui.py` 选择 `7) ❓ 帮助`
 
 ## ⚠️ 注意事项
 
@@ -191,10 +191,10 @@ less video_auto_learner.log
 ### 直接运行
 ```bash
 # 启动文本用户界面 (TUI)
-python video_learner_tui.py
+python fixed_video_learner_tui.py
 
 # 或直接运行主脚本
-python video_auto_learner.py
+python fixed_video_auto_learner.py
 ```
 
 ### 依赖安装
