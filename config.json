@@ -7,7 +7,7 @@
   },
   "base_url": "http://www.gaoxiaokaoshi.com",
   "update_interval_seconds": 60,
-  "max_concurrent_videos": 30,
+  "max_concurrent_videos": 60,
   "retry_attempts": 3,
   "username": "YOUR_USERNAME_HERE",
   "password": "YOUR_PASSWORD_HERE"
